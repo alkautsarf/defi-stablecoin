@@ -98,41 +98,6 @@ contract DSCEngine is ReentrancyGuard {
      * @notice Follows CEI.
      * @param tokenCollateralAddress The address of the collateral token.
      * @param amountCollateral The amount of collateral to deposit.
-     */
-    function depositCollateral(address tokenCollateralAddress, uint256 amountCollateral)
-        public
-        moreThanZero(amountCollateral)
-        isAllowedToken(tokenCollateralAddress)
-        nonReentrant
-    {
-        s_collateralDeposited[msg.sender][tokenCollateralAddress] += amountCollateral;
-        emit CollateralDeposited(msg.sender, tokenCollateralAddress, amountCollateral);
-        // This conditional is hypothetically unreachable since it always return true if succeed and revert early if failed.
-        bool ok = IERC20(tokenCollateralAddress).transferFrom(msg.sender, address(this), amountCollateral);
-        if (!ok) {
-            revert DSCEngine__TransferFailed();
-        }
-    }
-
-    /**
-     * @notice Follows CEI.
-     * @notice Health Factor must be above the minimum threshold which is 1.
-     * @param tokenCollateralAddress The address of the collateral token.
-     * @param amountCollateral The amount of collateral to withdraw.
-     */
-    function redeemCollateral(address tokenCollateralAddress, uint256 amountCollateral)
-        public
-        moreThanZero(amountCollateral)
-        nonReentrant
-    {
-        _redeemCollateral(tokenCollateralAddress, amountCollateral, msg.sender, msg.sender);
-        _revertIfHealthFactorIsBelowThreshold(msg.sender);
-    }
-
-    /**
-     * @notice Follows CEI.
-     * @param tokenCollateralAddress The address of the collateral token.
-     * @param amountCollateral The amount of collateral to deposit.
      * @param amountDscToBurn The amount of DSC to burn.
      * @notice This function will burn your DSC and redeem your underlying collateral in one transaction.
      */
@@ -142,25 +107,6 @@ contract DSCEngine is ReentrancyGuard {
         burnDsc(amountDscToBurn);
         redeemCollateral(tokenCollateralAddress, amountCollateral);
         // Redeem collateral already checks health factor.
-    }
-
-    /**
-     * @notice Follows CEI.
-     * @param amountDscToMint The amount of DSC to mint.
-     * @notice They must have collateral value than the minimum threshold.
-     */
-    function mintDsc(uint256 amountDscToMint) public moreThanZero(amountDscToMint) nonReentrant {
-        s_dscMinted[msg.sender] += amountDscToMint;
-        _revertIfHealthFactorIsBelowThreshold(msg.sender);
-        bool minted = i_dsc.mint(msg.sender, amountDscToMint);
-        if (!minted) {
-            revert DSCEngine__MintFailed();
-        }
-    }
-
-    function burnDsc(uint256 amount) public moreThanZero(amount) {
-        _burnDsc(amount, msg.sender, msg.sender);
-        _revertIfHealthFactorIsBelowThreshold(msg.sender); // This is not necessary and probably will never hit.
     }
 
     /**
@@ -198,6 +144,60 @@ contract DSCEngine is ReentrancyGuard {
 
     function getHealthFactor() external view {}
 
+    /**
+     * @notice Follows CEI.
+     * @param tokenCollateralAddress The address of the collateral token.
+     * @param amountCollateral The amount of collateral to deposit.
+     */
+    function depositCollateral(address tokenCollateralAddress, uint256 amountCollateral)
+        public
+        moreThanZero(amountCollateral)
+        isAllowedToken(tokenCollateralAddress)
+        nonReentrant
+    {
+        s_collateralDeposited[msg.sender][tokenCollateralAddress] += amountCollateral;
+        emit CollateralDeposited(msg.sender, tokenCollateralAddress, amountCollateral);
+        // This conditional is hypothetically unreachable since it always return true if succeed and revert early if failed.
+        bool ok = IERC20(tokenCollateralAddress).transferFrom(msg.sender, address(this), amountCollateral);
+        if (!ok) {
+            revert DSCEngine__TransferFailed();
+        }
+    }
+
+    /**
+     * @notice Follows CEI.
+     * @notice Health Factor must be above the minimum threshold which is 1.
+     * @param tokenCollateralAddress The address of the collateral token.
+     * @param amountCollateral The amount of collateral to withdraw.
+     */
+    function redeemCollateral(address tokenCollateralAddress, uint256 amountCollateral)
+        public
+        moreThanZero(amountCollateral)
+        nonReentrant
+    {
+        _redeemCollateral(tokenCollateralAddress, amountCollateral, msg.sender, msg.sender);
+        _revertIfHealthFactorIsBelowThreshold(msg.sender);
+    }
+
+    /**
+     * @notice Follows CEI.
+     * @param amountDscToMint The amount of DSC to mint.
+     * @notice They must have collateral value than the minimum threshold.
+     */
+    function mintDsc(uint256 amountDscToMint) public moreThanZero(amountDscToMint) nonReentrant {
+        s_dscMinted[msg.sender] += amountDscToMint;
+        _revertIfHealthFactorIsBelowThreshold(msg.sender);
+        bool minted = i_dsc.mint(msg.sender, amountDscToMint);
+        if (!minted) {
+            revert DSCEngine__MintFailed();
+        }
+    }
+
+    function burnDsc(uint256 amount) public moreThanZero(amount) {
+        _burnDsc(amount, msg.sender, msg.sender);
+        _revertIfHealthFactorIsBelowThreshold(msg.sender); // This is not necessary and probably will never hit.
+    }
+
     function getAccountCollateralValue(address user) public view returns (uint256 totalCollateralValueInUsd) {
         for (uint256 i = 0; i < s_collateralTokens.length; i++) {
             address token = s_collateralTokens[i];
@@ -216,6 +216,18 @@ contract DSCEngine is ReentrancyGuard {
         AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
         (, int256 price,,,) = priceFeed.latestRoundData();
         return ((uint256(price) * ADDITIONAL_FEED_PRECISION) * amount) / PRECISION;
+    }
+
+    /**
+     * @notice Follows CEI.
+     * @dev Health Factor is term used by AAVE.
+     * @param user The address of the user.
+     */
+    function _revertIfHealthFactorIsBelowThreshold(address user) internal view {
+        uint256 healthFactor = _healthFactor(user);
+        if (healthFactor < MIN_HEALTH_FACTOR) {
+            revert DSCEngine__BelowHealthFactorThreshold();
+        }
     }
 
     function _redeemCollateral(address tokenCollateralAddress, uint256 amountCollateral, address from, address to)
@@ -240,18 +252,6 @@ contract DSCEngine is ReentrancyGuard {
             revert DSCEngine__TransferFailed();
         }
         i_dsc.burn(amountDscToBurn);
-    }
-
-    /**
-     * @notice Follows CEI.
-     * @dev Health Factor is term used by AAVE.
-     * @param user The address of the user.
-     */
-    function _revertIfHealthFactorIsBelowThreshold(address user) internal view {
-        uint256 healthFactor = _healthFactor(user);
-        if (healthFactor < MIN_HEALTH_FACTOR) {
-            revert DSCEngine__BelowHealthFactorThreshold();
-        }
     }
 
     /**

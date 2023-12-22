@@ -6,7 +6,6 @@ import {DecentralizedStableCoin} from "./DecentralizedStableCoin.sol";
 import {ReentrancyGuard} from "@openzeppelin/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/interfaces/AggregatorV3Interface.sol";
-
 /**
  * @title DSCEngine
  * @author elpabl0.eth / Alkautsar.F
@@ -24,6 +23,7 @@ import {AggregatorV3Interface} from "@chainlink/src/v0.8/interfaces/AggregatorV3
  * @notice This contract is the core of the DSC System. It handles all the logic for mining and redeeming DSC, as well as depositing & withdrawing collateral.
  * @notice This contract is VERY loosely based on the MakerDAO DSS (DAI) system.
  */
+
 contract DSCEngine is ReentrancyGuard {
     error DSCEngine__AmountMustBeGreaterThanZero();
     error DSCEngine__TokenAddressNotSuitWithPriceFeedAddress();
@@ -144,6 +144,14 @@ contract DSCEngine is ReentrancyGuard {
 
     function getHealthFactor() external view {}
 
+    function getTotalCollateralAndDscValue(address user)
+        external
+        view
+        returns (uint256 totalDscMinted, uint256 collateralValueInUsd)
+    {
+        (totalDscMinted, collateralValueInUsd) = _getTotalCollateralAndDscValue(user);
+    }
+
     /**
      * @notice Follows CEI.
      * @param tokenCollateralAddress The address of the collateral token.
@@ -209,7 +217,7 @@ contract DSCEngine is ReentrancyGuard {
     function getTokenAmountFromUsd(address token, uint256 usdAmountInWei) public view returns (uint256) {
         AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
         (, int256 price,,,) = priceFeed.latestRoundData();
-        return (usdAmountInWei * PRECISION) / uint256(price) * ADDITIONAL_FEED_PRECISION;
+        return ((usdAmountInWei * PRECISION) / (uint256(price) * ADDITIONAL_FEED_PRECISION));
     }
 
     function getUsdValue(address token, uint256 amount) public view returns (uint256) {

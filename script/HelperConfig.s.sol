@@ -14,6 +14,7 @@ contract HelperConfig is Script {
         address wbtc;
         uint256 deployerKey;
     }
+
     uint8 public constant DECIMALS = 8;
     int256 public constant ETH_USD_PRICE = 3000e8;
     int256 public constant BTC_USD_PRICE = 1000e8;
@@ -22,7 +23,7 @@ contract HelperConfig is Script {
     NetworkConfig public activeNetworkConfig;
 
     constructor() {
-        if(block.chainid == 11155111){
+        if (block.chainid == 11155111) {
             activeNetworkConfig = getSepoliaEthConfig();
         } else {
             activeNetworkConfig = getOrCreateAnvilConfig();
@@ -40,7 +41,7 @@ contract HelperConfig is Script {
     }
 
     function getOrCreateAnvilConfig() public returns (NetworkConfig memory) {
-        if(activeNetworkConfig.wethUsdPriceFeed != address(0)) {
+        if (activeNetworkConfig.wethUsdPriceFeed != address(0)) {
             return activeNetworkConfig;
         }
 
@@ -50,7 +51,7 @@ contract HelperConfig is Script {
         MockV3Aggregator btcUsdPriceFeed = new MockV3Aggregator(DECIMALS, BTC_USD_PRICE);
         ERC20Mock wbtcMock = new ERC20Mock();
         vm.stopBroadcast();
-        
+
         return NetworkConfig({
             wethUsdPriceFeed: address(ethUsdPriceFeed),
             wbtcUsdPriceFeed: address(btcUsdPriceFeed),

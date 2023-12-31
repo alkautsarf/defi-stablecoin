@@ -64,7 +64,7 @@ contract DSCEngineTest is Test {
         ERC20Mock(weth).approve(address(dsce), AMOUNT_COLLATERAL);
         dsce.depositCollateralAndMintDsc(weth, AMOUNT_COLLATERAL, DSC_MINTED);
         vm.stopPrank();
-        int256 ethUsdUpdatedPrice = 1700e8;
+        int256 ethUsdUpdatedPrice = 1650e8;
 
         MockV3Aggregator(ethUsdPriceFeed).updateAnswer(ethUsdUpdatedPrice);
         uint256 userHealthFactor = dsce.getHealthFactor(USER);
@@ -76,16 +76,11 @@ contract DSCEngineTest is Test {
         dsce.depositCollateralAndMintDsc(weth, COLLATERAL_TO_COVER, DSC_MINTED);
         dsc.approve(address(dsce), DSC_MINTED);
         dsce.liquidate(weth, USER, DSC_MINTED); // We are covering their whole debt
-        uint256 userHealthFactorAfter = dsce.getHealthFactor(USER);
-        
-        (uint256 totalDscMinted, uint256 collateralValueInUsd) = dsce.getTotalCollateralAndDscValue(USER);
-        // dsce.redeemCollateral(address(weth), COLLATERAL_TO_COVER);
-        console.log("totalDscMinted", totalDscMinted);
-        console.log("collateralValueInUsd", collateralValueInUsd);
-        console.log(ERC20Mock(weth).balanceOf(LIQUIDATOR));
+        (uint256 totalDscMinted, uint256 collateralValueInUsd) = dsce.getTotalCollateralAndDscValue(LIQUIDATOR);
+        uint256 collateralAmount = dsce.getTokenAmountFromUsd(weth, collateralValueInUsd);
+        dsce.redeemCollateral(weth, collateralAmount);
         vm.stopPrank();
         _;
-
     }
 
     function setUp() public {
@@ -272,8 +267,31 @@ contract DSCEngineTest is Test {
         dsce.liquidate(weth, USER, _amount);
     }
 
-    function testLiquidate() public liquidated {
+    function testRevert_LiquidateExceededLiquidationThreshold() public {
+        vm.startPrank(USER);
+        ERC20Mock(weth).approve(address(dsce), AMOUNT_COLLATERAL);
+        dsce.depositCollateralAndMintDsc(weth, AMOUNT_COLLATERAL, DSC_MINTED);
+        vm.stopPrank();
+        int256 ethUsdUpdatedPrice = 1600e8;
 
+        MockV3Aggregator(ethUsdPriceFeed).updateAnswer(ethUsdUpdatedPrice);
+
+        ERC20Mock(weth).mint(LIQUIDATOR, COLLATERAL_TO_COVER);
+
+        vm.startPrank(LIQUIDATOR);
+        ERC20Mock(weth).approve(address(dsce), COLLATERAL_TO_COVER);
+        dsce.depositCollateralAndMintDsc(weth, COLLATERAL_TO_COVER, DSC_MINTED);
+        dsc.approve(address(dsce), DSC_MINTED);
+        vm.expectRevert(DSCEngine.DSCEngine__WarningExceededLiquidationThreshold.selector);
+        dsce.liquidate(weth, USER, DSC_MINTED); // We are covering their whole debt
+        vm.stopPrank();
+    }
+
+    function testLiquidateSucceedAndLiquidatorGetBonus() public liquidated {
+        uint256 liquidatorBalance = ERC20Mock(weth).balanceOf(LIQUIDATOR);
+        uint256 tokenAmount = dsce.getTokenAmountFromUsd(weth, DSC_MINTED);
+        uint256 expectedLiquidatorBalance = COLLATERAL_TO_COVER + (tokenAmount * LIQUIDATION_BONUS) / LIQUIDATION_PRECISION;
+        assertEq(liquidatorBalance, expectedLiquidatorBalance);
     }
 
     //* Function getUsdValue()
@@ -323,6 +341,13 @@ contract DSCEngineTest is Test {
         assert(afterHealthFactor < minHealthFactor);
     }
 
+    function testOnlyCalculateHealthFactor() public depositedCollateralAndMintedDsc {
+        uint256 expectedHealthFactor = MIN_HEALTH_FACTOR;
+        (uint256 totalDscMinted, uint256 collateralValueInUsd) = dsce.getTotalCollateralAndDscValue(USER);
+        uint256 actualHealthFactor = dsce.calculateHealthFactor(totalDscMinted, collateralValueInUsd);
+        assertEq(expectedHealthFactor, actualHealthFactor);
+    }
+
     //* External Getter Functions
 
     function testGetPrecision() public {
@@ -360,5 +385,9 @@ contract DSCEngineTest is Test {
         address expectedBtcPriceFeedAddress = dsce.getCollateralTokenPriceFeed(wbtc);
         assertEq(expectedEthPriceFeedAddress, ethUsdPriceFeed);
         assertEq(expectedBtcPriceFeedAddress, btcUsdPriceFeed);
+    }
+
+    function testGetCollateralAmount() public depositedCollateral {
+        assertEq(dsce.getCollateralAmount(USER, weth), AMOUNT_COLLATERAL);
     }
 }

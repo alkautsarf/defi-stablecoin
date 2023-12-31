@@ -34,6 +34,7 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__MintFailed();
     error DSCEngine__HealthFactorOk();
     error DSCEngine__HealthFactorNotImproved();
+    error DSCEngine__WarningExceededLiquidationThreshold();
     error DSCEngine__BurnMoreThanUserHas(uint256 amountToBurn, uint256 actualUserBalance);
 
     uint256 private constant ADDITIONAL_FEED_PRECISION = 1e10;
@@ -103,9 +104,11 @@ contract DSCEngine is ReentrancyGuard {
      * @param _amountDscToBurn The amount of DSC to burn.
      * @notice This function will burn your DSC and redeem your underlying collateral in one transaction.
      */
-    function redeemCollateralForDsc(address _tokenCollateralAddress, uint256 _amountCollateral, uint256 _amountDscToBurn)
-        external
-    {
+    function redeemCollateralForDsc(
+        address _tokenCollateralAddress,
+        uint256 _amountCollateral,
+        uint256 _amountDscToBurn
+    ) external {
         burnDsc(_amountDscToBurn);
         redeemCollateral(_tokenCollateralAddress, _amountCollateral);
         // Redeem collateral already checks health factor.
@@ -121,6 +124,8 @@ contract DSCEngine is ReentrancyGuard {
      * @notice This function working assumes the protocol is overcollateralized by roughly 200%.
      * @notice A known bug would be if the protocol were 100% collateralized or less, then there will be no incentive for liquidators.
      * For example, if the price of the collateral plummeted before anyone could be liquidated.
+     * @notice This function will revert with a warning if the collateral price drops more than 40% from the initial collateral price of liquidated user.
+     * @notice It's because the protocol cannot pay the incentive of 10% to liquidator.
      */
     function liquidate(address _collateral, address _user, uint256 _debtToCover)
         external
@@ -141,7 +146,18 @@ contract DSCEngine is ReentrancyGuard {
         if (endingUserHealthFactor <= startingUserHealthFactor) {
             revert DSCEngine__HealthFactorNotImproved();
         }
+        _updateLiquidatorBalances(msg.sender, _collateral, tokenAmountFromDebtCovered, _debtToCover);
         _revertIfHealthFactorIsBelowThreshold(msg.sender);
+    }
+
+    function _updateLiquidatorBalances(
+        address _liquidator,
+        address _collateral,
+        uint256 _redeemedCollateral,
+        uint256 _debtToCover
+    ) private {
+        s_dscMinted[_liquidator] -= _debtToCover;
+        s_collateralDeposited[_liquidator][_collateral] -= _redeemedCollateral;
     }
 
     function getHealthFactor(address _user) external view returns (uint256) {
@@ -252,7 +268,6 @@ contract DSCEngine is ReentrancyGuard {
      */
     function _revertIfHealthFactorIsBelowThreshold(address _user) internal view {
         uint256 healthFactor = _healthFactor(_user);
-
         if (healthFactor < MIN_HEALTH_FACTOR) {
             revert DSCEngine__BelowHealthFactorThreshold();
         }
@@ -271,6 +286,9 @@ contract DSCEngine is ReentrancyGuard {
     function _redeemCollateral(address _tokenCollateralAddress, uint256 _amountCollateral, address _from, address _to)
         private
     {
+        if(_amountCollateral > s_collateralDeposited[_from][_tokenCollateralAddress]) {
+            revert DSCEngine__WarningExceededLiquidationThreshold();
+        }
         s_collateralDeposited[_from][_tokenCollateralAddress] -= _amountCollateral;
         emit CollateralRedeemed(_from, _to, _tokenCollateralAddress, _amountCollateral);
         bool ok = IERC20(_tokenCollateralAddress).transfer(_to, _amountCollateral);
@@ -347,5 +365,9 @@ contract DSCEngine is ReentrancyGuard {
 
     function getCollateralTokenPriceFeed(address _token) external view returns (address) {
         return s_priceFeeds[_token];
+    }
+
+    function getCollateralAmount(address _user, address _token) external view returns (uint256) {
+        return s_collateralDeposited[_user][_token];
     }
 }

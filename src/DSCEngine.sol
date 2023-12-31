@@ -7,6 +7,7 @@ import {ReentrancyGuard} from "@openzeppelin/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/token/ERC20/IERC20.sol";
 import {AggregatorV3Interface} from "@chainlink/src/v0.8/interfaces/AggregatorV3Interface.sol";
 import "forge-std/console.sol";
+import {OracleLib} from "./libraries/OracleLib.sol";
 
 /**
  * @title DSCEngine
@@ -36,6 +37,8 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__HealthFactorNotImproved();
     error DSCEngine__WarningExceededLiquidationThreshold();
     error DSCEngine__BurnMoreThanUserHas(uint256 amountToBurn, uint256 actualUserBalance);
+
+    using OracleLib for AggregatorV3Interface;
 
     uint256 private constant ADDITIONAL_FEED_PRECISION = 1e10;
     uint256 private constant PRECISION = 1e18;
@@ -251,14 +254,8 @@ contract DSCEngine is ReentrancyGuard {
 
     function getTokenAmountFromUsd(address _token, uint256 _usdAmountInWei) public view returns (uint256) {
         AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[_token]);
-        (, int256 price,,,) = priceFeed.latestRoundData();
+        (, int256 price,,,) = priceFeed.staleCheckLatestRoundData();
         return ((_usdAmountInWei * PRECISION) / (uint256(price) * ADDITIONAL_FEED_PRECISION));
-    }
-
-    function _getUsdValue(address _token, uint256 _amount) public view returns (uint256) {
-        AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[_token]);
-        (, int256 price,,,) = priceFeed.latestRoundData();
-        return ((uint256(price) * ADDITIONAL_FEED_PRECISION) * _amount) / PRECISION;
     }
 
     /**
@@ -286,7 +283,7 @@ contract DSCEngine is ReentrancyGuard {
     function _redeemCollateral(address _tokenCollateralAddress, uint256 _amountCollateral, address _from, address _to)
         private
     {
-        if(_amountCollateral > s_collateralDeposited[_from][_tokenCollateralAddress]) {
+        if (_amountCollateral > s_collateralDeposited[_from][_tokenCollateralAddress]) {
             revert DSCEngine__WarningExceededLiquidationThreshold();
         }
         s_collateralDeposited[_from][_tokenCollateralAddress] -= _amountCollateral;
@@ -311,6 +308,12 @@ contract DSCEngine is ReentrancyGuard {
             revert DSCEngine__TransferFailed();
         }
         i_dsc.burn(_amountDscToBurn);
+    }
+
+    function _getUsdValue(address _token, uint256 _amount) private view returns (uint256) {
+        AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[_token]);
+        (, int256 price,,,) = priceFeed.staleCheckLatestRoundData();
+        return ((uint256(price) * ADDITIONAL_FEED_PRECISION) * _amount) / PRECISION;
     }
 
     /**

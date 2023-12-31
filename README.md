@@ -69,3 +69,9 @@ The liquidation process is a crucial mechanism in the Decentralized Stablecoin (
 #### Notes
 
 - This version of DeFi Stablecoin implements a different liquidation process. Key distinctions may be observed when compared to other implementations, such as those by [Patrick Collins](https://github.com/Cyfrin/foundry-defi-stablecoin-f23).
+
+#### Live Contract (Sepolia)
+
+- Decentralize Stable Coin (DSC) : [0xBB3Ae81e5a28a6d2720e5a3470d4a84f63596393](https://sepolia.etherscan.io/address/0xbb3ae81e5a28a6d2720e5a3470d4a84f63596393)
+- DSCEngine : [0x7aa8e189552ea35f2885598b2dda33f5edd1bcd6](https://sepolia.etherscan.io/address/0x7aa8e189552ea35f2885598b2dda33f5edd1bcd6)
+- WETH : [0xdd13e55209fd76afe204dbda4007c227904f0a81](https://sepolia.etherscan.io/address/0xdd13e55209fd76afe204dbda4007c227904f0a81)
